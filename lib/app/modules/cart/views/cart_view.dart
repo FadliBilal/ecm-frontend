@@ -38,10 +38,11 @@ class CartView extends StatelessWidget {
                   final item = controller.cartItems[index];
                   final product = item['product'];
                   
-                  // Helper URL Gambar (Copy logic dari Product Model biar cepat)
+                  // Helper URL Gambar
                   String imageUrl = "https://placehold.co/100x100/png";
                   if (product['image'] != null) {
-                     imageUrl = "http://10.0.2.2:8000/storage/${product['image']}";
+                      // Pastikan IP 10.0.2.2 jika pakai Emulator Android
+                      imageUrl = "http://10.0.2.2:8000/storage/${product['image']}";
                   }
 
                   return Container(
@@ -53,25 +54,42 @@ class CartView extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        // Gambar Kecil
+                        // --- PERBAIKAN: GAMBAR DENGAN ERROR HANDLER ---
                         ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: Image.network(imageUrl, width: 80, height: 80, fit: BoxFit.cover),
+                          child: Image.network(
+                            imageUrl, 
+                            width: 80, 
+                            height: 80, 
+                            fit: BoxFit.cover,
+                            // Mencegah crash jika koneksi putus / gambar tidak ada
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                width: 80,
+                                height: 80,
+                                color: Colors.grey[300],
+                                child: const Icon(Icons.broken_image, color: Colors.grey),
+                              );
+                            },
+                          ),
                         ),
+                        // ---------------------------------------------
                         const SizedBox(width: 12),
                         
-                        // Info Produk
+                        // Info Produk (Sudah ada Expanded, Aman dari Overflow)
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(product['name'], 
                                 style: const TextStyle(fontWeight: FontWeight.bold),
-                                maxLines: 1, overflow: TextOverflow.ellipsis
+                                maxLines: 2, // Ubah jadi 2 baris biar lebih lega
+                                overflow: TextOverflow.ellipsis
                               ),
                               const SizedBox(height: 4),
-                              Text(currencyFormatter.format(double.parse(product['price'].toString())), 
-                                style: const TextStyle(color: AppColors.primary)
+                              Text(
+                                currencyFormatter.format(double.tryParse(product['price'].toString()) ?? 0), 
+                                style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)
                               ),
                             ],
                           ),
@@ -127,8 +145,7 @@ class CartView extends StatelessWidget {
                       width: double.infinity,
                       child: ElevatedButton(
                         onPressed: () {
-                          // Nanti arahkan ke Halaman Shipping (Cek Ongkir)
-                           Get.snackbar("Info", "Lanjut ke Cek Ongkir...", snackPosition: SnackPosition.BOTTOM);
+                          Get.toNamed('/checkout');
                         },
                         child: const Text("Checkout Sekarang"),
                       ),

@@ -19,6 +19,16 @@ class CartController extends GetxController {
     }
   });
 
+  double get totalWeight => cartItems.fold(0, (sum, item) {
+    try {
+      double weight = double.parse(item['product']['weight'].toString());
+      int qty = int.parse(item['quantity'].toString());
+      return sum + (weight * qty);
+    } catch (e) {
+      return sum;
+    }
+  });
+
   @override
   void onInit() {
     super.onInit();

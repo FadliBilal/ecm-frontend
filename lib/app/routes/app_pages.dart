@@ -4,6 +4,8 @@ import 'package:frontend_ecommerce/app/modules/register/views/register_view.dart
 import 'package:frontend_ecommerce/app/modules/home/views/home_view.dart';
 import 'package:frontend_ecommerce/app/modules/detail/views/detail_product_view.dart';
 import 'package:frontend_ecommerce/app/modules/cart/views/cart_view.dart';
+import 'package:frontend_ecommerce/app/modules/checkout/views/checkout_view.dart';
+import 'package:frontend_ecommerce/app/modules/history/views/history_view.dart';
 
 class AppPages {
   // Halaman pertama kali aplikasi dibuka
@@ -33,5 +35,12 @@ class AppPages {
       name: '/cart', 
       page: () => const CartView()
     ),
+    GetPage(
+      name: '/checkout', 
+      page: () => const CheckoutView()
+    ),
+    GetPage(
+      name: '/history', 
+      page: () => const HistoryView()),
   ];
 }
