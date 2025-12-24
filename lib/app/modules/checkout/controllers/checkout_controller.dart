@@ -1,30 +1,157 @@
 import 'package:frontend_ecommerce/app/data/providers/api_client.dart';
 import 'package:frontend_ecommerce/app/modules/cart/controllers/cart_controller.dart';
+import 'package:frontend_ecommerce/app/modules/dashboard/controllers/dashboard_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:frontend_ecommerce/app/core/theme/app_colors.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:dio/dio.dart';
-import 'package:url_launcher/url_launcher.dart'; // <--- JANGAN LUPA IMPORT INI
+import 'package:url_launcher/url_launcher.dart';
 
 class CheckoutController extends GetxController {
   final ApiClient _apiClient = ApiClient();
-  final CartController cartController = Get.find<CartController>();
+  final box = GetStorage();
+  
+  CartController get cartController {
+    if (Get.isRegistered<CartController>()) {
+      return Get.find<CartController>();
+    }
+    return Get.put(CartController());
+  }
 
+  // State Ongkir
   RxString selectedCourier = ''.obs;
   RxList shippingServices = [].obs;
   RxMap selectedService = {}.obs;
   RxBool isLoadingOngkir = false.obs;
 
-  // Grand Total
-  double get grandTotal {
-    double productTotal = cartController.totalPrice;
-    double shippingCost = 0;
+  // --- STATE ALAMAT PENGIRIMAN ---
+  RxString recipientName = ''.obs;
+  RxString recipientPhone = ''.obs;
+  RxString deliveryAddress = ''.obs;
 
-    if (selectedService.isNotEmpty) {
-      // Kita sudah normalkan strukturnya di bawah, jadi aksesnya aman
-      shippingCost = double.tryParse(selectedService['cost'][0]['value'].toString()) ?? 0;
+  // Controller Text Editing
+  late TextEditingController nameC;
+  late TextEditingController phoneC;
+  late TextEditingController addressC;
+
+  @override
+  void onInit() {
+    super.onInit();
+    nameC = TextEditingController();
+    phoneC = TextEditingController();
+    addressC = TextEditingController();
+    loadUserData();
+  }
+
+  @override
+  void onClose() {
+    nameC.dispose();
+    phoneC.dispose();
+    addressC.dispose();
+    super.onClose();
+  }
+
+  void loadUserData() {
+    var user = box.read('user'); 
+    if (user != null) {
+      recipientName.value = user['name'] ?? 'User';
+      recipientPhone.value = user['phone'] ?? '08123456789';
+      deliveryAddress.value = user['address'] ?? 'Jl. Mulyorejo Kampus C Unair, Surabaya';
     }
+  }
 
-    return productTotal + shippingCost;
+  // ✅ FIX: Getter Biaya Ongkir untuk View
+  double get shippingCost {
+    if (selectedService.isEmpty || selectedService['cost'] == null) return 0;
+    return double.tryParse(selectedService['cost'].toString()) ?? 0;
+  }
+
+  // ✅ FIX: Getter Total Keseluruhan
+  double get grandTotal {
+    return cartController.totalPrice + shippingCost;
+  }
+
+  // --- FUNGSI TAMPILKAN POPUP UBAH ALAMAT ---
+  void showEditAddressDialog() {
+    nameC.text = recipientName.value;
+    phoneC.text = recipientPhone.value;
+    addressC.text = deliveryAddress.value;
+
+    Get.bottomSheet(
+      Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const Text("Ubah Alamat Pengiriman", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 20),
+              
+              _customTextField(nameC, "Nama Penerima", Icons.person_outline),
+              const SizedBox(height: 16),
+              _customTextField(phoneC, "Nomor HP", Icons.phone_android_outlined, type: TextInputType.phone),
+              const SizedBox(height: 16),
+              _customTextField(addressC, "Alamat Lengkap", Icons.home_outlined, lines: 3),
+              
+              const SizedBox(height: 24),
+              
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                  ),
+                  child: const Text("Simpan Perubahan", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  onPressed: () {
+                    recipientName.value = nameC.text;
+                    recipientPhone.value = phoneC.text;
+                    deliveryAddress.value = addressC.text;
+                    Get.back();
+                    Get.snackbar("Sukses", "Alamat pengiriman diperbarui", 
+                      snackPosition: SnackPosition.BOTTOM, 
+                      backgroundColor: Colors.green, 
+                      colorText: Colors.white,
+                      margin: const EdgeInsets.all(16)
+                    );
+                  },
+                ),
+              ),
+              SizedBox(height: MediaQuery.of(Get.context!).viewInsets.bottom + 20),
+            ],
+          ),
+        ),
+      ),
+      isScrollControlled: true,
+    );
+  }
+
+  Widget _customTextField(TextEditingController ctrl, String label, IconData icon, {TextInputType type = TextInputType.text, int lines = 1}) {
+    return TextField(
+      controller: ctrl,
+      keyboardType: type,
+      maxLines: lines,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+    );
   }
 
   Future<void> checkOngkir(String courierCode) async {
@@ -34,49 +161,25 @@ class CheckoutController extends GetxController {
     isLoadingOngkir.value = true;
 
     try {
-      debugPrint("🚀 MENGIRIM REQUEST KE BACKEND...");
-
       final response = await _apiClient.init.post('/check-ongkir', data: {
         'courier': courierCode.toLowerCase(),
         'weight': cartController.totalWeight > 0 ? cartController.totalWeight : 1000,
-        'origin': 444,      
-        'destination': 114, 
+        'origin': 444, // Surabaya
+        'destination': 114, // Contoh Kota Tujuan
       });
-
-      debugPrint("📦 RAW JSON: ${response.data}");
 
       if (response.statusCode == 200) {
         List parsedCosts = [];
         var rawData = response.data;
-
-        // --- PARSING KHUSUS BACKEND KAMU ---
         if (rawData is List) {
-          parsedCosts = rawData.map((item) {
-            return {
-              'service': item['service'],
-              'description': item['description'],
-              'cost': [
-                {
-                  'value': item['cost'], 
-                  'etd': item['etd']     
-                }
-              ]
-            };
-          }).toList();
-        } 
-        else if (rawData['data'] is List) {
+          parsedCosts = rawData;
+        } else if (rawData['data'] is List) {
            parsedCosts = rawData['data']; 
         }
-
-        debugPrint("✅ BERHASIL PARSING: ${parsedCosts.length} item");
         shippingServices.assignAll(parsedCosts);
       }
-    } on DioException catch (e) {
-      debugPrint("❌ DIO ERROR: ${e.response?.data}");
-      Get.snackbar("Gagal", "Error Ongkir: ${e.message}");
     } catch (e) {
-      debugPrint("❌ ERROR PARSING: $e");
-      Get.snackbar("Error", "Gagal memproses data ongkir");
+      Get.snackbar("Gagal", "Gagal memuat ongkir");
     } finally {
       isLoadingOngkir.value = false;
     }
@@ -84,24 +187,14 @@ class CheckoutController extends GetxController {
 
   Future<void> placeOrder() async {
     if (selectedService.isEmpty) {
-      Get.snackbar("Peringatan", "Pilih ongkir dulu!", backgroundColor: Colors.orange, colorText: Colors.white);
+      Get.snackbar("Peringatan", "Pilih layanan pengiriman dahulu!", 
+        backgroundColor: Colors.orange, colorText: Colors.white);
       return;
     }
-    
-    // Mencegah double click
-    if (Get.isDialogOpen == true) return; 
 
-    // Tampilkan Loading
-    Get.dialog(
-      const Center(child: CircularProgressIndicator()),
-      barrierDismissible: false,
-    );
+    Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
 
     try {
-      debugPrint("🚀 MENGIRIM ORDER...");
-      
-      var shippingCost = double.tryParse(selectedService['cost'][0]['value'].toString()) ?? 0;
-      
       var dataKirim = {
         'shipping_service': selectedService['service'],
         'shipping_cost': shippingCost, 
@@ -109,94 +202,75 @@ class CheckoutController extends GetxController {
         'courier': selectedCourier.value, 
         'destination_city_id': 114, 
         'origin_city_id': 444,      
-        // Data Dummy agar lolos validasi backend
         'payment_method': 'xendit', 
-        'address': 'Jalan Mulyorejo Kampus C Unair, Surabaya', 
-        'phone': '08123456789',             
+        'address': "${recipientName.value} (${recipientPhone.value}) - ${deliveryAddress.value}", 
+        'phone': recipientPhone.value,             
         'postal_code': '60115',
-        'notes': 'Mohon dipacking kayu',
+        'notes': 'Penerima: ${recipientName.value}',
       };
 
-      debugPrint("📦 DATA DIKIRIM: $dataKirim");
-
       final response = await _apiClient.init.post('/orders', data: dataKirim);
-      
-      // Tutup Loading
       if (Get.isDialogOpen == true) Get.back();
-
-      debugPrint("✅ RESPONSE ORDER: ${response.data}");
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        
-        // 1. AMBIL LINK PEMBAYARAN
         String paymentUrl = response.data['payment_url'] ?? '';
+        cartController.cartItems.clear(); 
 
-        Get.defaultDialog(
-          title: "🎉 Order Berhasil!",
-          middleText: "Pesanan telah dibuat. Lanjutkan pembayaran sekarang?",
-          textConfirm: "Bayar Sekarang",
-          textCancel: "Nanti Saja",
-          confirmTextColor: Colors.white,
-          buttonColor: Colors.blue, 
-          
-          // --- LOGIC TOMBOL BAYAR YANG SUDAH DIPERBAIKI ---
-          onConfirm: () async {
-            // 1. Tutup Dialog dulu biar UI bersih
-            Get.back(); 
-            
-            // 2. Bersihkan keranjang
-            cartController.cartItems.clear(); 
-            
-            // 3. Buka Link Xendit (Versi Aman)
-            if (paymentUrl.isNotEmpty) {
-              try {
-                final Uri uri = Uri.parse(paymentUrl);
-                // Langsung launch mode external (Browser HP)
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              } catch (e) {
-                debugPrint("Gagal buka link: $e");
-                Get.snackbar("Info", "Silakan cek halaman Riwayat untuk membayar");
-              }
-            }
-
-            // 4. Pindah ke Halaman History
-            // Pastikan kamu sudah mendaftarkan route '/history' di AppPages!
-            Get.offAllNamed('/history'); 
-          },
-          // ------------------------------------------------
-          
-          onCancel: () {
-            cartController.cartItems.clear();
-            Get.offAllNamed('/home');
-          }
-        );
+        _showSuccessDialog(paymentUrl);
       }
     } on DioException catch (e) {
-      if (Get.isDialogOpen == true) Get.back(); // Tutup loading jika error
-
-      debugPrint("❌ DIO ERROR STATUS: ${e.response?.statusCode}");
-      debugPrint("❌ DIO ERROR DATA: ${e.response?.data}");
-
-      String pesan = "Terjadi kesalahan";
-      
-      if (e.response != null) {
-        if (e.response?.data['message'] != null) {
-          pesan = e.response?.data['message'];
-        }
-        if (e.response?.data['errors'] != null) {
-           // Ambil error pertama dari map errors
-           var errors = e.response?.data['errors'];
-           if (errors is Map && errors.isNotEmpty) {
-             pesan = "${errors.values.first[0]}";
-           }
-        }
-      }
-
-      Get.snackbar("Gagal Order", pesan, backgroundColor: Colors.red, colorText: Colors.white, duration: const Duration(seconds: 4));
-    } catch (e) {
       if (Get.isDialogOpen == true) Get.back();
-      debugPrint("❌ ERROR LAIN: $e");
-      Get.snackbar("Error", "$e", backgroundColor: Colors.red, colorText: Colors.white);
+      String msg = e.response?.data['message'] ?? "Gagal membuat pesanan";
+      Get.snackbar("Gagal", msg, backgroundColor: Colors.red, colorText: Colors.white);
     }
+  }
+
+  void _showSuccessDialog(String paymentUrl) {
+    Get.dialog(
+      Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_circle_rounded, color: Colors.green, size: 80),
+              const SizedBox(height: 20),
+              const Text("Pesanan Berhasil!", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 12),
+              const Text("Silakan selesaikan pembayaran untuk memproses pesanan Anda.", 
+                textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                  onPressed: () async {
+                    Get.back();
+                    if (paymentUrl.isNotEmpty) {
+                      await launchUrl(Uri.parse(paymentUrl), mode: LaunchMode.externalApplication);
+                    }
+                    Get.offAllNamed('/dashboard');
+                  },
+                  child: const Text("Bayar Sekarang", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  Get.back();
+                  Get.offAllNamed('/dashboard');
+                  if (Get.isRegistered<DashboardController>()) {
+                    Get.find<DashboardController>().changeTabIndex(2); // Ke tab history
+                  }
+                },
+                child: const Text("Nanti Saja", style: TextStyle(color: Colors.grey)),
+              )
+            ],
+          ),
+        ),
+      ),
+      barrierDismissible: false,
+    );
   }
 }
