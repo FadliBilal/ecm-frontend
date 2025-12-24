@@ -1,52 +1,115 @@
-import 'package:dio/dio.dart';
 import 'package:frontend_ecommerce/app/data/providers/api_client.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:dio/dio.dart';
+import 'package:get_storage/get_storage.dart'; 
 
 class LoginController extends GetxController {
+  // --- Dependencies ---
   final ApiClient _apiClient = ApiClient();
-  final _storage = const FlutterSecureStorage();
+  final box = GetStorage();
 
-  final emailC = TextEditingController();
-  final passwordC = TextEditingController();
-  
-  RxBool isLoading = false.obs;
-  RxBool isObscure = true.obs;
+  // --- Controllers ---
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
 
+  // --- State Variables ---
+  var isLoading = false.obs;
+  var obscureText = true.obs; 
+
+  // --- Actions ---
+  void toggleObscure() => obscureText.value = !obscureText.value;
+
+  @override
+  void onClose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.onClose();
+  }
+
+  /// Fungsi utama untuk melakukan Login
   Future<void> login() async {
-    if (emailC.text.isEmpty || passwordC.text.isEmpty) {
-      Get.snackbar("Error", "Email dan Password harus diisi", 
-        backgroundColor: Colors.redAccent, colorText: Colors.white);
+    // 1. Validasi Input
+    if (emailController.text.isEmpty || passwordController.text.isEmpty) {
+      Get.snackbar(
+        "Peringatan", 
+        "Email dan Password tidak boleh kosong", 
+        backgroundColor: Colors.orange, 
+        colorText: Colors.white,
+        snackPosition: SnackPosition.TOP,
+      );
       return;
     }
 
+    // 2. Set Loading State
     isLoading.value = true;
+
     try {
+      // 3. Request ke API
       final response = await _apiClient.init.post('/login', data: {
-        'email': emailC.text,
-        'password': passwordC.text,
+        'email': emailController.text,
+        'password': passwordController.text,
       });
 
+      // 4. Handle Success (200 OK)
       if (response.statusCode == 200) {
-        // 1. Simpan Token
-        String token = response.data['access_token'];
-        await _storage.write(key: 'token', value: token);
+        final responseData = response.data;
 
-        // 2. Navigasi ke Home (Hapus riwayat page sebelumnya)
-        Get.offAllNamed('/home');
+        // Simpan Session (Token & User Data)
+        if (responseData['access_token'] != null) {
+          await box.write('token', responseData['access_token']);
+        }
+        
+        if (responseData['data'] != null) {
+          await box.write('user', responseData['data']);
+        }
+
+        // Feedback User
+        Get.snackbar(
+          "Login Berhasil", 
+          "Selamat datang kembali!", 
+          backgroundColor: Colors.green, 
+          colorText: Colors.white,
+          margin: const EdgeInsets.all(10),
+          snackPosition: SnackPosition.TOP,
+        );
+        
+        // Navigasi ke Dashboard
+        Get.offAllNamed('/dashboard'); 
+      } 
+      else {
+        // Handle unexpected status code
+        Get.snackbar("Gagal", "Respon server tidak valid", backgroundColor: Colors.red, colorText: Colors.white);
       }
+
     } on DioException catch (e) {
-      String message = "Terjadi kesalahan";
+      // 5. Handle Dio Error (Koneksi / Salah Password / dll)
+      String errorMessage = "Terjadi kesalahan koneksi";
+      
       if (e.response != null) {
-         message = e.response?.data['message'] ?? "Cek email/password anda";
+        // Ambil pesan spesifik dari backend jika ada
+        errorMessage = e.response?.data['message'] ?? "Login Gagal";
       }
-      Get.snackbar("Gagal Login", message,
-          backgroundColor: Colors.red, colorText: Colors.white);
+
+      Get.snackbar(
+        "Gagal", 
+        errorMessage, 
+        backgroundColor: Colors.red, 
+        colorText: Colors.white,
+        snackPosition: SnackPosition.TOP,
+      );
+      
     } catch (e) {
-       Get.snackbar("Error", "Gagal koneksi ke server",
-          backgroundColor: Colors.red, colorText: Colors.white);
+      // 6. Handle System Error
+      debugPrint("System Error: $e");
+      Get.snackbar(
+        "Error", 
+        "Terjadi kesalahan pada aplikasi", 
+        backgroundColor: Colors.red, 
+        colorText: Colors.white
+      );
     } finally {
+      // 7. Reset Loading State
       isLoading.value = false;
     }
   }

@@ -44,6 +44,7 @@ dependencies:
   shimmer: ^3.0.0
   lottie: ^3.3.2
   url_launcher: ^6.3.2
+  get_storage: ^2.1.1
 
 dev_dependencies:
   flutter_test:

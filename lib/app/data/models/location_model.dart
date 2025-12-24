@@ -6,11 +6,9 @@ class Location {
 
   factory Location.fromJson(Map<String, dynamic> json) {
     return Location(
-      // Sesuaikan dengan response API RajaOngkirService kamu
-      // Biasanya RajaOngkir/Komerce balikin 'subdistrict_id' atau 'destination_id'
-      // Tapi di API Service kamu kemarin saya lihat kamu return standardized data
+      // Handle jika backend kirim 'label' atau kombinasi nama kecamatan
       id: json['id'] ?? 0, 
-      label: json['label'] ?? json['subdistrict_name'] ?? 'Unknown',
+      label: json['label'] ?? json['subdistrict_name'] ?? 'Lokasi Tanpa Nama',
     );
   }
 }

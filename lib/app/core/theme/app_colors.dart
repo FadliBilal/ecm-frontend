@@ -1,25 +1,30 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  // Primary Color (Tech Blue)
-  static const Color primary = Color(0xFF0066FF);
-  static const Color primaryLight = Color(0xFFE5F0FF); // Buat background icon/aksen
+  // --- TOKOPEDIA GREEN THEME ---
+  static const Color primary = Color(0xFF03AC0E); // Hijau Tokped
+  static const Color primaryDark = Color(0xFF028A0B);
+  static const Color primaryLight = Color(0xFFE8F5E9); // Hijau muda banget
 
-  // Background Colors
-  static const Color background = Color(0xFFF8F9FD); // Putih agak kebiruan (biar gak sakit mata)
+  // --- BACKGROUND ---
+  static const Color background = Color(0xFFF5F5F5); // Abu-abu muda (Standar E-commerce)
   static const Color white = Colors.white;
+  static const Color black = Color(0xFF212121);
   
-  // Text Colors
-  static const Color textBlack = Color(0xFF1F2937); // Hitam soft (bukan #000000)
-  static const Color textGrey = Color(0xFF9CA3AF);  // Abu-abu buat deskripsi
-  
-  // Status Colors
-  static const Color success = Color(0xFF10B981); // Hijau (Paid)
-  static const Color error = Color(0xFFEF4444);   // Merah (Error)
-  static const Color warning = Color(0xFFF59E0B); // Kuning (Pending)
+  // --- TEXT COLORS ---
+  static const Color textBlack = Color(0xFF212121); 
+  static const Color textGrey = Color(0xFF757575);
+  static const Color textSecondary = Color(0xFF757575); // Alias
 
-  // Border/Shimmer
-  static const Color border = Color(0xFFE5E7EB);
+  // --- BORDERS & SKELETON ---
+  static const Color border = Color(0xFFE0E0E0);
+  static const Color greyLight = Color(0xFFE0E0E0);
   static const Color shimmerBase = Color(0xFFE0E0E0);
   static const Color shimmerHighlight = Color(0xFFF5F5F5);
+  
+  // --- STATUS COLORS ---
+  static const Color success = Color(0xFF388E3C);
+  static const Color error = Color(0xFFD32F2F);
+  static const Color danger = Color(0xFFD32F2F); // Alias
+  static const Color warning = Color(0xFFFFA000);
 }

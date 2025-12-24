@@ -4,134 +4,95 @@ import 'package:frontend_ecommerce/app/modules/register/controllers/register_con
 import 'package:flutter/material.dart';
 import 'package:flutter_typeahead/flutter_typeahead.dart';
 import 'package:get/get.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-class RegisterView extends StatelessWidget {
+// PASTIKAN NAMA KELAS INI ADALAH RegisterView
+class RegisterView extends GetView<RegisterController> {
   const RegisterView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Inject Controller
-    final controller = Get.put(RegisterController());
-
     return Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 20),
-              // Header Text
-              Text(
-                "Buat Akun Baru",
-                style: GoogleFonts.poppins(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textBlack,
-                ),
+              // Header
+              GestureDetector(
+                onTap: () => Get.back(),
+                child: const Icon(Icons.arrow_back, color: AppColors.textBlack),
               ),
+              const SizedBox(height: 24),
               const Text(
-                "Mulai belanja barang impianmu",
-                style: TextStyle(color: AppColors.textGrey),
+                "Buat Akun Baru",
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.primary),
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 8),
+              const Text("Lengkapi data diri untuk pengiriman paket", style: TextStyle(color: AppColors.textGrey)),
+              const SizedBox(height: 32),
 
-              // Form Inputs
+              // Form Input (Nama, Email, Password, Lokasi, Alamat)
               _buildLabel("Nama Lengkap"),
-              TextField(
-                controller: controller.nameC,
-                decoration: const InputDecoration(hintText: "Masukkan nama"),
-              ),
+              _buildTextField(controller: controller.nameC, hint: "Nama Lengkap", icon: Icons.person_outline),
               const SizedBox(height: 16),
-
+              
               _buildLabel("Email"),
-              TextField(
-                controller: controller.emailC,
-                decoration: const InputDecoration(hintText: "contoh@email.com"),
-                keyboardType: TextInputType.emailAddress,
-              ),
+              _buildTextField(controller: controller.emailC, hint: "Email", icon: Icons.email_outlined, inputType: TextInputType.emailAddress),
               const SizedBox(height: 16),
 
               _buildLabel("Password"),
-              TextField(
+              Obx(() => TextField(
                 controller: controller.passwordC,
-                obscureText: true,
-                decoration: const InputDecoration(hintText: "••••••••"),
-              ),
+                obscureText: controller.obscureText.value,
+                decoration: _inputDecoration(
+                  hint: "Password", 
+                  icon: Icons.lock_outline,
+                  suffixIcon: IconButton(
+                    icon: Icon(controller.obscureText.value ? Icons.visibility_off : Icons.visibility, color: AppColors.textGrey),
+                    onPressed: controller.toggleObscure,
+                  ),
+                ),
+              )),
               const SizedBox(height: 16),
 
-              // --- AUTOCOMPLETE LOKASI ---
-              _buildLabel("Cari Kecamatan/Kota"),
+              _buildLabel("Cari Kecamatan"),
               TypeAheadField<Location>(
                 controller: controller.locationSearchC,
                 builder: (context, textController, focusNode) {
                   return TextField(
                     controller: textController,
                     focusNode: focusNode,
-                    decoration: const InputDecoration(
-                      hintText: "Ketik min. 3 huruf (cth: Sura)",
-                      suffixIcon: Icon(Icons.location_on_outlined),
-                    ),
+                    decoration: _inputDecoration(hint: "Cari Kecamatan...", icon: Icons.location_on_outlined),
                   );
                 },
-                suggestionsCallback: (pattern) async {
-                  return await controller.searchLocation(pattern);
-                },
-                itemBuilder: (context, Location suggestion) {
-                  return ListTile(
-                    leading: const Icon(Icons.place, color: AppColors.textGrey),
-                    title: Text(suggestion.label),
-                  );
-                },
-                onSelected: (Location suggestion) {
+                suggestionsCallback: (pattern) async => await controller.searchLocation(pattern),
+                itemBuilder: (context, suggestion) => ListTile(title: Text(suggestion.label)),
+                onSelected: (suggestion) {
                   controller.locationSearchC.text = suggestion.label;
                   controller.selectedLocationId.value = suggestion.id;
-                  debugPrint("Lokasi dipilih: ${suggestion.id}"); // Debugging
                 },
-                loadingBuilder: (context) => const Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: Text("Mencari...", style: TextStyle(color: AppColors.textGrey)),
-                ),
-                emptyBuilder: (context) => const Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: Text("Lokasi tidak ditemukan"),
-                ),
               ),
-              // ---------------------------
+              const SizedBox(height: 16),
 
+              _buildLabel("Alamat Lengkap"),
+              TextField(
+                controller: controller.addressC,
+                maxLines: 3,
+                decoration: _inputDecoration(hint: "Jalan, No Rumah...", icon: Icons.home, isMultiline: true),
+              ),
               const SizedBox(height: 32),
 
-              // Tombol Daftar
-              Obx(() => SizedBox(
+              SizedBox(
                 width: double.infinity,
-                child: ElevatedButton(
+                height: 50,
+                child: Obx(() => ElevatedButton(
                   onPressed: controller.isLoading.value ? null : () => controller.register(),
-                  child: controller.isLoading.value
-                      ? const SizedBox(
-                          height: 20, width: 20, 
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                        )
-                      : const Text("Daftar Sekarang"),
-                ),
-              )),
-              
-              const SizedBox(height: 20),
-              // Login Link
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text("Sudah punya akun? ", style: TextStyle(color: AppColors.textGrey)),
-                  GestureDetector(
-                    onTap: () {
-                      // Nanti arahkan ke halaman Login
-                      debugPrint("Ke Halaman Login");
-                    },
-                    child: const Text("Masuk", style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              )
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  child: controller.isLoading.value ? const CircularProgressIndicator(color: Colors.white) : const Text("Daftar Sekarang", style: TextStyle(color: Colors.white)),
+                )),
+              ),
             ],
           ),
         ),
@@ -139,10 +100,21 @@ class RegisterView extends StatelessWidget {
     );
   }
 
-  Widget _buildLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(text, style: const TextStyle(fontWeight: FontWeight.w500)),
+  // Widget Helper Sederhana
+  Widget _buildLabel(String text) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold)));
+  
+  Widget _buildTextField({required TextEditingController controller, required String hint, required IconData icon, TextInputType inputType = TextInputType.text}) {
+    return TextField(controller: controller, keyboardType: inputType, decoration: _inputDecoration(hint: hint, icon: icon));
+  }
+
+  InputDecoration _inputDecoration({required String hint, required IconData icon, Widget? suffixIcon, bool isMultiline = false}) {
+    return InputDecoration(
+      hintText: hint,
+      prefixIcon: Padding(padding: isMultiline ? const EdgeInsets.only(bottom: 30) : EdgeInsets.zero, child: Icon(icon, color: AppColors.textGrey)),
+      suffixIcon: suffixIcon,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      filled: true,
+      fillColor: AppColors.background,
     );
   }
 }
