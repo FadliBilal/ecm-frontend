@@ -45,8 +45,7 @@ lib/
  │   │   ├── cart/          # Keranjang
  │   │   ├── checkout/      # Checkout & ongkir
  │   │   └── profile/       # Profil user
- │   ├── routes/            # App routing
- │   └── bindings/          # Dependency injection
+ │   └── routes/            # App routing
  └── main.dart
 ```
 
