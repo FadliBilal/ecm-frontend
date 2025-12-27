@@ -236,20 +236,6 @@ class HomeView extends GetView<HomeController> {
                 color: AppColors.primary.withValues(alpha: 0.1), 
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Row(
-                children: const [
-                  Icon(Icons.stars_rounded, color: AppColors.primary, size: 18),
-                  SizedBox(width: 6),
-                  Text(
-                    "Tukuo seng akeh!", 
-                    style: TextStyle(
-                      fontSize: 12, 
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary
-                    ),
-                  ),
-                ],
-              ),
             )
           ],
         ),
