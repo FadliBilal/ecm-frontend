@@ -1,6 +1,5 @@
 import 'package:frontend_ecommerce/app/data/providers/api_client.dart';
 import 'package:frontend_ecommerce/app/modules/cart/controllers/cart_controller.dart';
-import 'package:frontend_ecommerce/app/modules/dashboard/controllers/dashboard_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:frontend_ecommerce/app/core/theme/app_colors.dart';
@@ -12,6 +11,9 @@ class CheckoutController extends GetxController {
   final ApiClient _apiClient = ApiClient();
   final box = GetStorage();
   
+  // List barang checkout
+  RxList checkoutItems = [].obs;
+
   CartController get cartController {
     if (Get.isRegistered<CartController>()) {
       return Get.find<CartController>();
@@ -25,10 +27,16 @@ class CheckoutController extends GetxController {
   RxMap selectedService = {}.obs;
   RxBool isLoadingOngkir = false.obs;
 
-  // --- STATE ALAMAT PENGIRIMAN ---
+  // --- STATE USER & ALAMAT ---
   RxString recipientName = ''.obs;
   RxString recipientPhone = ''.obs;
   RxString deliveryAddress = ''.obs;
+  
+  // LOGIC MARKETPLACE: 
+  // Origin = Kota Seller (Diambil dari Produk)
+  // Destination = Kota Buyer (Diambil dari User)
+  RxInt originCityId = 0.obs; 
+  RxInt destinationCityId = 0.obs;
 
   // Controller Text Editing
   late TextEditingController nameC;
@@ -41,7 +49,9 @@ class CheckoutController extends GetxController {
     nameC = TextEditingController();
     phoneC = TextEditingController();
     addressC = TextEditingController();
+    
     loadUserData();
+    prepareCheckoutItems();
   }
 
   @override
@@ -52,27 +62,196 @@ class CheckoutController extends GetxController {
     super.onClose();
   }
 
-  void loadUserData() {
-    var user = box.read('user'); 
-    if (user != null) {
-      recipientName.value = user['name'] ?? 'User';
-      recipientPhone.value = user['phone'] ?? '08123456789';
-      deliveryAddress.value = user['address'] ?? 'Jl. Mulyorejo Kampus C Unair, Surabaya';
+  // 1. SIAPKAN BARANG & TENTUKAN ASAL PENGIRIMAN (SELLER)
+  void prepareCheckoutItems() {
+    final args = Get.arguments;
+    if (args != null && args['isDirectBuy'] == true) {
+      try {
+        var directItem = cartController.cartItems.firstWhere(
+          (item) => item['product_id'] == args['productId'],
+          orElse: () => null,
+        );
+        if (directItem != null) checkoutItems.assignAll([directItem]);
+      } catch (e) {
+        checkoutItems.assignAll(cartController.cartItems);
+      }
+    } else {
+      checkoutItems.assignAll(cartController.cartItems);
+    }
+
+    // LOGIC MARKETPLACE: Ambil Origin dari Produk pertama
+    // Asumsi: 1x Checkout = 1 Seller. Jika Multi-seller, butuh logic split cart lebih lanjut.
+    if (checkoutItems.isNotEmpty) {
+      // Pastikan backend kamu mengirim 'city_id' atau 'origin_id' di dalam objek product
+      var productData = checkoutItems[0]['product'];
+      
+      // Coba ambil ID kota seller, jika null default ke Surabaya (Safe fallback)
+      originCityId.value = int.tryParse(productData['city_id'].toString()) ?? 
+                           int.tryParse(productData['origin_id'].toString()) ?? 444; 
     }
   }
 
-  // ✅ FIX: Getter Biaya Ongkir untuk View
+  // 2. LOAD DATA USER & VALIDASI KELENGKAPAN
+  void loadUserData() {
+    var user = box.read('user'); 
+    if (user != null) {
+      recipientName.value = user['name'] ?? '';
+      recipientPhone.value = user['phone'] ?? ''; // Jangan default dummy, biarkan kosong agar bisa divalidasi
+      
+      String label = user['location_label'] ?? '';
+      String detail = user['full_address'] ?? '';
+      
+      if (label.isNotEmpty && detail.isNotEmpty) {
+        deliveryAddress.value = "$label, $detail";
+      } else {
+        deliveryAddress.value = detail;
+      }
+      
+      // Ambil ID Kota Buyer
+      destinationCityId.value = int.tryParse(user['location_id'].toString()) ?? 0;
+    }
+  }
+
+  // --- GETTER LOGIC MARKETPLACE ---
+
+  // Hitung Total Berat Real (Gram)
+  int get totalWeight {
+    int total = 0;
+    for (var item in checkoutItems) {
+      // Ambil berat dari produk, default 1000g jika null
+      int weightPerItem = int.tryParse(item['product']['weight'].toString()) ?? 1000;
+      int qty = int.tryParse(item['quantity'].toString()) ?? 1;
+      total += (weightPerItem * qty);
+    }
+    // API Ongkir biasanya menolak berat 0, minimal 1 gram (atau 1000 gram safe limit)
+    return total > 0 ? total : 1000;
+  }
+
+  double get subtotalPrice {
+    double total = 0;
+    for (var item in checkoutItems) {
+      double price = double.tryParse(item['product']['price'].toString()) ?? 0;
+      int qty = int.tryParse(item['quantity'].toString()) ?? 0;
+      total += (price * qty);
+    }
+    return total;
+  }
+
   double get shippingCost {
     if (selectedService.isEmpty || selectedService['cost'] == null) return 0;
     return double.tryParse(selectedService['cost'].toString()) ?? 0;
   }
 
-  // ✅ FIX: Getter Total Keseluruhan
-  double get grandTotal {
-    return cartController.totalPrice + shippingCost;
+  double get grandTotal => subtotalPrice + shippingCost;
+
+  // --- VALIDASI DATA USER SEBELUM TRANSAKSI ---
+  bool validateUserData() {
+    if (recipientPhone.value.isEmpty || recipientPhone.value.length < 5) {
+      Get.snackbar(
+        "Data Belum Lengkap", 
+        "Nomor HP wajib diisi untuk pengiriman!",
+        backgroundColor: Colors.red, colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+        mainButton: TextButton(
+          onPressed: () => showEditAddressDialog(), 
+          child: const Text("Isi Sekarang", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
+        )
+      );
+      // Otomatis buka popup jika mau
+      showEditAddressDialog();
+      return false;
+    }
+
+    if (destinationCityId.value == 0 || deliveryAddress.value.isEmpty) {
+      Get.snackbar(
+        "Alamat Kosong", 
+        "Mohon atur alamat pengiriman terlebih dahulu.",
+        backgroundColor: Colors.red, colorText: Colors.white
+      );
+      showEditAddressDialog();
+      return false;
+    }
+    return true;
   }
 
-  // --- FUNGSI TAMPILKAN POPUP UBAH ALAMAT ---
+  // --- FUNGSI CEK ONGKIR (DINAMIS DARI SELLER KE BUYER) ---
+  Future<void> checkOngkir(String courierCode) async {
+    // 1. Validasi dulu
+    if (!validateUserData()) return;
+
+    selectedCourier.value = courierCode;
+    selectedService.clear();
+    shippingServices.clear();
+    isLoadingOngkir.value = true;
+
+    try {
+      final response = await _apiClient.init.post('/check-ongkir', data: {
+        'courier': courierCode.toLowerCase(),
+        'weight': totalWeight, // Berat Dinamis
+        'origin': originCityId.value, // Lokasi Seller
+        'destination': destinationCityId.value, // Lokasi Buyer
+      });
+
+      if (response.statusCode == 200) {
+        List parsedCosts = [];
+        var rawData = response.data;
+        if (rawData is List) {
+          parsedCosts = rawData;
+        } else if (rawData['data'] is List) {
+           parsedCosts = rawData['data']; 
+        }
+        shippingServices.assignAll(parsedCosts);
+      }
+    } catch (e) {
+      Get.snackbar("Gagal", "Gagal memuat ongkir. Pastikan alamat seller & buyer valid.");
+    } finally {
+      isLoadingOngkir.value = false;
+    }
+  }
+
+  Future<void> placeOrder() async {
+    // 1. Validasi lagi sebelum bayar
+    if (!validateUserData()) return;
+
+    if (selectedService.isEmpty) {
+      Get.snackbar("Peringatan", "Pilih layanan pengiriman dahulu!", 
+        backgroundColor: Colors.orange, colorText: Colors.white);
+      return;
+    }
+
+    Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
+
+    try {
+      var dataKirim = {
+        'items': checkoutItems.map((e) => e['id']).toList(),
+        'shipping_service': selectedService['service'],
+        'shipping_cost': shippingCost, 
+        'total_price': grandTotal,
+        'courier': selectedCourier.value, 
+        'origin_city_id': originCityId.value, // PENTING: Origin Seller
+        'destination_city_id': destinationCityId.value, // PENTING: Destination Buyer
+        'payment_method': 'xendit', 
+        'address': "${recipientName.value} (${recipientPhone.value}) - ${deliveryAddress.value}", 
+        'phone': recipientPhone.value,
+        'notes': 'Marketplace Order',
+      };
+
+      final response = await _apiClient.init.post('/orders', data: dataKirim);
+      if (Get.isDialogOpen == true) Get.back();
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        String paymentUrl = response.data['payment_url'] ?? '';
+        await cartController.fetchCart(); 
+        _showSuccessDialog(paymentUrl);
+      }
+    } on DioException catch (e) {
+      if (Get.isDialogOpen == true) Get.back();
+      String msg = e.response?.data['message'] ?? "Gagal membuat pesanan";
+      Get.snackbar("Gagal", msg, backgroundColor: Colors.red, colorText: Colors.white);
+    }
+  }
+
+  // --- POPUP UBAH DATA (Updated dengan Validasi HP) ---
   void showEditAddressDialog() {
     nameC.text = recipientName.value;
     phoneC.text = recipientPhone.value;
@@ -90,44 +269,58 @@ class CheckoutController extends GetxController {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Center(
-                child: Container(
-                  width: 40, height: 4,
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
-                ),
-              ),
-              const Text("Ubah Alamat Pengiriman", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)))),
               const SizedBox(height: 20),
               
+              const Text("Lengkapi Data Pengiriman", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              
+              // Info jika data kosong
+              if (recipientPhone.value.isEmpty || destinationCityId.value == 0)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8)),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.info_outline, color: Colors.orange, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(child: Text("Mohon isi Nomor HP & Alamat agar ongkir bisa dihitung.", style: TextStyle(fontSize: 12, color: Colors.orange))),
+                    ],
+                  ),
+                ),
+
               _customTextField(nameC, "Nama Penerima", Icons.person_outline),
               const SizedBox(height: 16),
-              _customTextField(phoneC, "Nomor HP", Icons.phone_android_outlined, type: TextInputType.phone),
-              const SizedBox(height: 16),
-              _customTextField(addressC, "Alamat Lengkap", Icons.home_outlined, lines: 3),
               
+              // Field Nomor HP
+              _customTextField(phoneC, "Nomor HP (Wajib)", Icons.phone_android_outlined, type: TextInputType.phone),
+              const SizedBox(height: 16),
+              
+              _customTextField(addressC, "Alamat Lengkap", Icons.home_outlined, lines: 3),
               const SizedBox(height: 24),
               
               SizedBox(
                 width: double.infinity,
-                height: 52,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
                   ),
-                  child: const Text("Simpan Perubahan", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  child: const Text("Simpan Data", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   onPressed: () {
+                    // Validasi Sederhana di tombol Simpan
+                    if (phoneC.text.isEmpty) {
+                      Get.snackbar("Gagal", "Nomor HP tidak boleh kosong", backgroundColor: Colors.red, colorText: Colors.white);
+                      return;
+                    }
+
                     recipientName.value = nameC.text;
                     recipientPhone.value = phoneC.text;
                     deliveryAddress.value = addressC.text;
                     Get.back();
-                    Get.snackbar("Sukses", "Alamat pengiriman diperbarui", 
-                      snackPosition: SnackPosition.BOTTOM, 
-                      backgroundColor: Colors.green, 
-                      colorText: Colors.white,
-                      margin: const EdgeInsets.all(16)
-                    );
+                    Get.snackbar("Sukses", "Data pengiriman diperbarui", backgroundColor: Colors.green, colorText: Colors.white);
                   },
                 ),
               ),
@@ -154,77 +347,6 @@ class CheckoutController extends GetxController {
     );
   }
 
-  Future<void> checkOngkir(String courierCode) async {
-    selectedCourier.value = courierCode;
-    selectedService.clear();
-    shippingServices.clear();
-    isLoadingOngkir.value = true;
-
-    try {
-      final response = await _apiClient.init.post('/check-ongkir', data: {
-        'courier': courierCode.toLowerCase(),
-        'weight': cartController.totalWeight > 0 ? cartController.totalWeight : 1000,
-        'origin': 444, // Surabaya
-        'destination': 114, // Contoh Kota Tujuan
-      });
-
-      if (response.statusCode == 200) {
-        List parsedCosts = [];
-        var rawData = response.data;
-        if (rawData is List) {
-          parsedCosts = rawData;
-        } else if (rawData['data'] is List) {
-           parsedCosts = rawData['data']; 
-        }
-        shippingServices.assignAll(parsedCosts);
-      }
-    } catch (e) {
-      Get.snackbar("Gagal", "Gagal memuat ongkir");
-    } finally {
-      isLoadingOngkir.value = false;
-    }
-  }
-
-  Future<void> placeOrder() async {
-    if (selectedService.isEmpty) {
-      Get.snackbar("Peringatan", "Pilih layanan pengiriman dahulu!", 
-        backgroundColor: Colors.orange, colorText: Colors.white);
-      return;
-    }
-
-    Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
-
-    try {
-      var dataKirim = {
-        'shipping_service': selectedService['service'],
-        'shipping_cost': shippingCost, 
-        'total_price': grandTotal,
-        'courier': selectedCourier.value, 
-        'destination_city_id': 114, 
-        'origin_city_id': 444,      
-        'payment_method': 'xendit', 
-        'address': "${recipientName.value} (${recipientPhone.value}) - ${deliveryAddress.value}", 
-        'phone': recipientPhone.value,             
-        'postal_code': '60115',
-        'notes': 'Penerima: ${recipientName.value}',
-      };
-
-      final response = await _apiClient.init.post('/orders', data: dataKirim);
-      if (Get.isDialogOpen == true) Get.back();
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        String paymentUrl = response.data['payment_url'] ?? '';
-        cartController.cartItems.clear(); 
-
-        _showSuccessDialog(paymentUrl);
-      }
-    } on DioException catch (e) {
-      if (Get.isDialogOpen == true) Get.back();
-      String msg = e.response?.data['message'] ?? "Gagal membuat pesanan";
-      Get.snackbar("Gagal", msg, backgroundColor: Colors.red, colorText: Colors.white);
-    }
-  }
-
   void _showSuccessDialog(String paymentUrl) {
     Get.dialog(
       Dialog(
@@ -238,19 +360,15 @@ class CheckoutController extends GetxController {
               const SizedBox(height: 20),
               const Text("Pesanan Berhasil!", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               const SizedBox(height: 12),
-              const Text("Silakan selesaikan pembayaran untuk memproses pesanan Anda.", 
-                textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+              const Text("Lakukan pembayaran sekarang?", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
-                height: 50,
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                   onPressed: () async {
                     Get.back();
-                    if (paymentUrl.isNotEmpty) {
-                      await launchUrl(Uri.parse(paymentUrl), mode: LaunchMode.externalApplication);
-                    }
+                    if (paymentUrl.isNotEmpty) await launchUrl(Uri.parse(paymentUrl), mode: LaunchMode.externalApplication);
                     Get.offAllNamed('/dashboard');
                   },
                   child: const Text("Bayar Sekarang", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -260,9 +378,6 @@ class CheckoutController extends GetxController {
                 onPressed: () {
                   Get.back();
                   Get.offAllNamed('/dashboard');
-                  if (Get.isRegistered<DashboardController>()) {
-                    Get.find<DashboardController>().changeTabIndex(2); // Ke tab history
-                  }
                 },
                 child: const Text("Nanti Saja", style: TextStyle(color: Colors.grey)),
               )
